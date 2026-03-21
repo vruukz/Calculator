@@ -195,6 +195,13 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
   KeyEventResult _handleKey(FocusNode n, KeyEvent e) {
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     final k = e.logicalKey;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+
+    // Handle shift+= for + sign
+    if (shift && k == LogicalKeyboardKey.equal) { _inputOp('+'); return KeyEventResult.handled; }
+    // Handle shift+8 for *
+    if (shift && k == LogicalKeyboardKey.digit8) { _inputOp('×'); return KeyEventResult.handled; }
+
     final map = <LogicalKeyboardKey, VoidCallback>{
       LogicalKeyboardKey.digit0: () => _digit('0'), LogicalKeyboardKey.numpad0: () => _digit('0'),
       LogicalKeyboardKey.digit1: () => _digit('1'), LogicalKeyboardKey.numpad1: () => _digit('1'),
@@ -207,12 +214,15 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
       LogicalKeyboardKey.digit8: () => _digit('8'), LogicalKeyboardKey.numpad8: () => _digit('8'),
       LogicalKeyboardKey.digit9: () => _digit('9'), LogicalKeyboardKey.numpad9: () => _digit('9'),
       LogicalKeyboardKey.period: _dot, LogicalKeyboardKey.numpadDecimal: _dot,
-      LogicalKeyboardKey.enter: _calc, LogicalKeyboardKey.numpadEnter: _calc, LogicalKeyboardKey.equal: _calc,
+      LogicalKeyboardKey.enter: _calc, LogicalKeyboardKey.numpadEnter: _calc,
+      LogicalKeyboardKey.equal: _calc,
       LogicalKeyboardKey.escape: _clear, LogicalKeyboardKey.backspace: _backspace,
-      LogicalKeyboardKey.add: () => _inputOp('+'), LogicalKeyboardKey.numpadAdd: () => _inputOp('+'),
-      LogicalKeyboardKey.minus: () => _inputOp('−'), LogicalKeyboardKey.numpadSubtract: () => _inputOp('−'),
-      LogicalKeyboardKey.asterisk: () => _inputOp('×'), LogicalKeyboardKey.numpadMultiply: () => _inputOp('×'),
-      LogicalKeyboardKey.slash: () => _inputOp('÷'), LogicalKeyboardKey.numpadDivide: () => _inputOp('÷'),
+      LogicalKeyboardKey.numpadAdd: () => _inputOp('+'),
+      LogicalKeyboardKey.minus: () => _inputOp('−'),
+      LogicalKeyboardKey.numpadSubtract: () => _inputOp('−'),
+      LogicalKeyboardKey.numpadMultiply: () => _inputOp('×'),
+      LogicalKeyboardKey.slash: () => _inputOp('÷'),
+      LogicalKeyboardKey.numpadDivide: () => _inputOp('÷'),
     };
     if (map.containsKey(k)) { map[k]!(); return KeyEventResult.handled; }
     return KeyEventResult.ignored;
@@ -277,7 +287,7 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
                   ]),
                 ),
 
-                // ── Display ── right-aligned, bottom of area
+                // Display
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -382,69 +392,80 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
                     ]),
                   ),
                 ),
-
               ]),
             ),
 
             // ══ RIGHT: History panel ══
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeInOut,
-              width: _histOpen ? 220 : 0,
-              decoration: const BoxDecoration(
-                color: kHistBg,
-                border: Border(left: BorderSide(color: kBorder)),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                  child: Row(children: [
-                    const Text('History', style: TextStyle(
-                      color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
-                    const Spacer(),
-                    if (_history.isNotEmpty)
+            GestureDetector(
+              onHorizontalDragEnd: (details) {
+                if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
+                  setState(() => _histOpen = false);
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOut,
+                width: _histOpen ? 220 : 0,
+                decoration: const BoxDecoration(
+                  color: kHistBg,
+                  border: Border(left: BorderSide(color: kBorder)),
+                ),
+                clipBehavior: Clip.hardEdge,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                    child: Row(children: [
+                      const Text('History', style: TextStyle(
+                        color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
+                      const Spacer(),
                       GestureDetector(
-                        onTap: () => setState(() => _history.clear()),
-                        child: const Icon(Icons.delete_outline, color: kTextSub, size: 18),
+                        onTap: () => setState(() => _histOpen = false),
+                        child: const Icon(Icons.close, color: kTextSub, size: 18),
                       ),
-                  ]),
-                ),
-                const Divider(color: kBorder, height: 1),
-                Expanded(
-                  child: _history.isEmpty
-                    ? const Center(child: Text('No history yet',
-                        style: TextStyle(color: kTextSub, fontSize: 13)))
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: _history.length,
-                        itemBuilder: (_, i) {
-                          final h = _history[i];
-                          return GestureDetector(
-                            onTap: () => setState(() {
-                              _current = h.result;
-                              _newInput = true;
-                              _justCalc = true;
-                            }),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              decoration: BoxDecoration(
-                                border: Border(bottom: BorderSide(color: kBorder.withOpacity(0.5))),
+                      if (_history.isNotEmpty) ...[
+                        const SizedBox(width: 12),
+                        GestureDetector(
+                          onTap: () => setState(() => _history.clear()),
+                          child: const Icon(Icons.delete_outline, color: kTextSub, size: 18),
+                        ),
+                      ],
+                    ]),
+                  ),
+                  const Divider(color: kBorder, height: 1),
+                  Expanded(
+                    child: _history.isEmpty
+                      ? const Center(child: Text('No history yet',
+                          style: TextStyle(color: kTextSub, fontSize: 13)))
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: _history.length,
+                          itemBuilder: (_, i) {
+                            final h = _history[i];
+                            return GestureDetector(
+                              onTap: () => setState(() {
+                                _current = h.result;
+                                _newInput = true;
+                                _justCalc = true;
+                              }),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                decoration: BoxDecoration(
+                                  border: Border(bottom: BorderSide(color: kBorder.withOpacity(0.5))),
+                                ),
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                  Text(h.expression, style: const TextStyle(color: kTextSub, fontSize: 12)),
+                                  const SizedBox(height: 2),
+                                  Text(h.result, style: const TextStyle(
+                                    color: kText, fontSize: 18, fontWeight: FontWeight.w300)),
+                                ]),
                               ),
-                              child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                                Text(h.expression, style: const TextStyle(color: kTextSub, fontSize: 12)),
-                                const SizedBox(height: 2),
-                                Text(h.result, style: const TextStyle(
-                                  color: kText, fontSize: 18, fontWeight: FontWeight.w300)),
-                              ]),
-                            ),
-                          );
-                        },
-                      ),
-                ),
-              ]),
+                            );
+                          },
+                        ),
+                  ),
+                ]),
+              ),
             ),
-
           ]),
         ),
       ),
