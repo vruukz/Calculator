@@ -58,16 +58,55 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
   late Animation<double> _sciAnim;
   final FocusNode _focus = FocusNode();
 
+  // Hidden text field controller for capturing physical keyboard on Android
+  final TextEditingController _hiddenCtrl = TextEditingController();
+  final FocusNode _hiddenFocus = FocusNode();
+
   @override
   void initState() {
     super.initState();
     _anim    = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
     _sciAnim = CurvedAnimation(parent: _anim, curve: Curves.easeInOut);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focus.requestFocus();
+      _hiddenFocus.requestFocus();
+    });
+    _hiddenCtrl.addListener(_onHiddenTextChange);
+  }
+
+  void _onHiddenTextChange() {
+    final text = _hiddenCtrl.text;
+    if (text.isEmpty) return;
+    for (final char in text.characters) {
+      _processChar(char);
+    }
+    _hiddenCtrl.clear();
+  }
+
+  void _processChar(String char) {
+    switch (char) {
+      case '0': case '1': case '2': case '3': case '4':
+      case '5': case '6': case '7': case '8': case '9':
+        _digit(char); break;
+      case '.': case ',': _dot(); break;
+      case '+': _inputOp('+'); break;
+      case '-': _inputOp('−'); break;
+      case '*': _inputOp('×'); break;
+      case '/': _inputOp('÷'); break;
+      case '=': _calc(); break;
+      case '%': setState(() { final v = double.tryParse(_current) ?? 0; _current = _fmt(v / 100); }); break;
+      case '^': _inputOp('xʸ'); break;
+    }
   }
 
   @override
-  void dispose() { _anim.dispose(); _focus.dispose(); super.dispose(); }
+  void dispose() {
+    _anim.dispose();
+    _focus.dispose();
+    _hiddenCtrl.dispose();
+    _hiddenFocus.dispose();
+    super.dispose();
+  }
 
   double get _toRad => _isDeg ? math.pi / 180 : 1.0;
 
@@ -197,10 +236,10 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
     final k = e.logicalKey;
     final shift = HardwareKeyboard.instance.isShiftPressed;
 
-    // Handle shift+= for + sign
-    if (shift && k == LogicalKeyboardKey.equal) { _inputOp('+'); return KeyEventResult.handled; }
-    // Handle shift+8 for *
+    if (shift && k == LogicalKeyboardKey.equal)  { _inputOp('+'); return KeyEventResult.handled; }
     if (shift && k == LogicalKeyboardKey.digit8) { _inputOp('×'); return KeyEventResult.handled; }
+    if (shift && k == LogicalKeyboardKey.digit5) { setState(() { final v = double.tryParse(_current) ?? 0; _current = _fmt(v / 100); }); return KeyEventResult.handled; }
+    if (shift && k == LogicalKeyboardKey.digit6) { _inputOp('xʸ'); return KeyEventResult.handled; }
 
     final map = <LogicalKeyboardKey, VoidCallback>{
       LogicalKeyboardKey.digit0: () => _digit('0'), LogicalKeyboardKey.numpad0: () => _digit('0'),
@@ -214,9 +253,12 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
       LogicalKeyboardKey.digit8: () => _digit('8'), LogicalKeyboardKey.numpad8: () => _digit('8'),
       LogicalKeyboardKey.digit9: () => _digit('9'), LogicalKeyboardKey.numpad9: () => _digit('9'),
       LogicalKeyboardKey.period: _dot, LogicalKeyboardKey.numpadDecimal: _dot,
+      LogicalKeyboardKey.comma: _dot,
       LogicalKeyboardKey.enter: _calc, LogicalKeyboardKey.numpadEnter: _calc,
       LogicalKeyboardKey.equal: _calc,
-      LogicalKeyboardKey.escape: _clear, LogicalKeyboardKey.backspace: _backspace,
+      LogicalKeyboardKey.escape: _clear,
+      LogicalKeyboardKey.delete: _clear,
+      LogicalKeyboardKey.backspace: _backspace,
       LogicalKeyboardKey.numpadAdd: () => _inputOp('+'),
       LogicalKeyboardKey.minus: () => _inputOp('−'),
       LogicalKeyboardKey.numpadSubtract: () => _inputOp('−'),
@@ -224,6 +266,7 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
       LogicalKeyboardKey.slash: () => _inputOp('÷'),
       LogicalKeyboardKey.numpadDivide: () => _inputOp('÷'),
     };
+
     if (map.containsKey(k)) { map[k]!(); return KeyEventResult.handled; }
     return KeyEventResult.ignored;
   }
@@ -250,223 +293,239 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
       child: Scaffold(
         backgroundColor: kBg,
         body: SafeArea(
-          child: Row(children: [
+          child: Stack(
+            children: [
+              // Hidden text field for Android physical keyboard
+              Positioned(
+                left: -1000,
+                top: -1000,
+                child: TextField(
+                  controller: _hiddenCtrl,
+                  focusNode: _hiddenFocus,
+                  keyboardType: TextInputType.none,
+                  enableInteractiveSelection: false,
+                  showCursor: false,
+                ),
+              ),
 
-            // ══ LEFT: Calculator ══
-            Expanded(
-              flex: 3,
-              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                // ══ LEFT: Calculator ══
+                Expanded(
+                  flex: 3,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
 
-                // Title bar
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                  child: Row(children: [
-                    GestureDetector(
-                      onTap: () {
-                        setState(() => _sciOpen = !_sciOpen);
-                        _sciOpen ? _anim.forward() : _anim.reverse();
-                      },
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.menu, color: kText, size: 18),
-                        const SizedBox(width: 12),
-                        Text(_sciOpen ? 'Scientific' : 'Standard',
-                          style: const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w600)),
-                        const SizedBox(width: 4),
-                        AnimatedRotation(
-                          turns: _sciOpen ? 0.5 : 0,
-                          duration: const Duration(milliseconds: 220),
-                          child: const Icon(Icons.keyboard_arrow_down, color: kTextSub, size: 18),
+                    // Title bar
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                      child: Row(children: [
+                        GestureDetector(
+                          onTap: () {
+                            setState(() => _sciOpen = !_sciOpen);
+                            _sciOpen ? _anim.forward() : _anim.reverse();
+                          },
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(Icons.menu, color: kText, size: 18),
+                            const SizedBox(width: 12),
+                            Text(_sciOpen ? 'Scientific' : 'Standard',
+                              style: const TextStyle(color: kText, fontSize: 18, fontWeight: FontWeight.w600)),
+                            const SizedBox(width: 4),
+                            AnimatedRotation(
+                              turns: _sciOpen ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 220),
+                              child: const Icon(Icons.keyboard_arrow_down, color: kTextSub, size: 18),
+                            ),
+                          ]),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => setState(() => _histOpen = !_histOpen),
+                          child: Icon(Icons.history, color: _histOpen ? kAccent : kTextSub, size: 20),
                         ),
                       ]),
                     ),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () => setState(() => _histOpen = !_histOpen),
-                      child: Icon(Icons.history, color: _histOpen ? kAccent : kTextSub, size: 20),
-                    ),
-                  ]),
-                ),
 
-                // Display
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    const SizedBox(height: 24),
-                    Text(_expr,
-                      style: const TextStyle(color: kTextSub, fontSize: 14),
-                      textAlign: TextAlign.right,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        _current,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          color: kText,
-                          fontSize: 64,
-                          fontWeight: FontWeight.w200,
+                    // Display
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                        const SizedBox(height: 24),
+                        Text(_expr,
+                          style: const TextStyle(color: kTextSub, fontSize: 14),
+                          textAlign: TextAlign.right,
+                          overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 4),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            _current,
+                            textAlign: TextAlign.right,
+                            style: const TextStyle(
+                              color: kText,
+                              fontSize: 64,
+                              fontWeight: FontWeight.w200,
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ),
+
+                    // Scientific panel
+                    SizeTransition(
+                      sizeFactor: _sciAnim,
+                      axisAlignment: -1,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Column(children: [
+                          Row(children: [
+                            Expanded(child: _btn('INV',  BtnType.special)),
+                            Expanded(child: _btn('DEG',  BtnType.special)),
+                            Expanded(child: _btn('π',    BtnType.science)),
+                            Expanded(child: _btn('e',    BtnType.science)),
+                            Expanded(child: _btn('n!',   BtnType.science)),
+                          ]),
+                          Row(children: [
+                            Expanded(child: _btn('sin',  BtnType.science)),
+                            Expanded(child: _btn('cos',  BtnType.science)),
+                            Expanded(child: _btn('tan',  BtnType.science)),
+                            Expanded(child: _btn('ln',   BtnType.science)),
+                            Expanded(child: _btn('log',  BtnType.science)),
+                          ]),
+                          Row(children: [
+                            Expanded(child: _btn('x²',   BtnType.science)),
+                            Expanded(child: _btn('xʸ',   BtnType.science)),
+                            Expanded(child: _btn('²√x',  BtnType.science)),
+                            Expanded(child: _btn('1/x',  BtnType.science)),
+                            Expanded(child: _btn('%',    BtnType.special)),
+                          ]),
+                        ]),
+                      ),
+                    ),
+
+                    const Divider(color: kBorder, height: 1),
+
+                    // Main keypad
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Column(children: [
+                          Expanded(child: Row(children: [
+                            Expanded(child: _btn('%',   BtnType.special)),
+                            Expanded(child: _btn('CE',  BtnType.special)),
+                            Expanded(child: _btn('C',   BtnType.special)),
+                            Expanded(child: _btn('⌫',  BtnType.special)),
+                          ])),
+                          Expanded(child: Row(children: [
+                            Expanded(child: _btn('1/x', BtnType.science)),
+                            Expanded(child: _btn('x²',  BtnType.science)),
+                            Expanded(child: _btn('²√x', BtnType.science)),
+                            Expanded(child: _btn('÷',   BtnType.operator)),
+                          ])),
+                          Expanded(child: Row(children: [
+                            Expanded(child: _btn('7', BtnType.number)),
+                            Expanded(child: _btn('8', BtnType.number)),
+                            Expanded(child: _btn('9', BtnType.number)),
+                            Expanded(child: _btn('×', BtnType.operator)),
+                          ])),
+                          Expanded(child: Row(children: [
+                            Expanded(child: _btn('4', BtnType.number)),
+                            Expanded(child: _btn('5', BtnType.number)),
+                            Expanded(child: _btn('6', BtnType.number)),
+                            Expanded(child: _btn('−', BtnType.operator)),
+                          ])),
+                          Expanded(child: Row(children: [
+                            Expanded(child: _btn('1', BtnType.number)),
+                            Expanded(child: _btn('2', BtnType.number)),
+                            Expanded(child: _btn('3', BtnType.number)),
+                            Expanded(child: _btn('+', BtnType.operator)),
+                          ])),
+                          Expanded(child: Row(children: [
+                            Expanded(child: _btn('+/-', BtnType.special)),
+                            Expanded(child: _btn('0',   BtnType.number)),
+                            Expanded(child: _btn('.',   BtnType.number)),
+                            Expanded(child: _btn('=',   BtnType.equals)),
+                          ])),
+                        ]),
                       ),
                     ),
                   ]),
                 ),
 
-                // Scientific panel
-                SizeTransition(
-                  sizeFactor: _sciAnim,
-                  axisAlignment: -1,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Column(children: [
-                      Row(children: [
-                        Expanded(child: _btn('INV',  BtnType.special)),
-                        Expanded(child: _btn('DEG',  BtnType.special)),
-                        Expanded(child: _btn('π',    BtnType.science)),
-                        Expanded(child: _btn('e',    BtnType.science)),
-                        Expanded(child: _btn('n!',   BtnType.science)),
-                      ]),
-                      Row(children: [
-                        Expanded(child: _btn('sin',  BtnType.science)),
-                        Expanded(child: _btn('cos',  BtnType.science)),
-                        Expanded(child: _btn('tan',  BtnType.science)),
-                        Expanded(child: _btn('ln',   BtnType.science)),
-                        Expanded(child: _btn('log',  BtnType.science)),
-                      ]),
-                      Row(children: [
-                        Expanded(child: _btn('x²',   BtnType.science)),
-                        Expanded(child: _btn('xʸ',   BtnType.science)),
-                        Expanded(child: _btn('²√x',  BtnType.science)),
-                        Expanded(child: _btn('1/x',  BtnType.science)),
-                        Expanded(child: _btn('%',    BtnType.special)),
-                      ]),
-                    ]),
-                  ),
-                ),
-
-                const Divider(color: kBorder, height: 1),
-
-                // Main keypad
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Column(children: [
-                      Expanded(child: Row(children: [
-                        Expanded(child: _btn('%',   BtnType.special)),
-                        Expanded(child: _btn('CE',  BtnType.special)),
-                        Expanded(child: _btn('C',   BtnType.special)),
-                        Expanded(child: _btn('⌫',  BtnType.special)),
-                      ])),
-                      Expanded(child: Row(children: [
-                        Expanded(child: _btn('1/x', BtnType.science)),
-                        Expanded(child: _btn('x²',  BtnType.science)),
-                        Expanded(child: _btn('²√x', BtnType.science)),
-                        Expanded(child: _btn('÷',   BtnType.operator)),
-                      ])),
-                      Expanded(child: Row(children: [
-                        Expanded(child: _btn('7', BtnType.number)),
-                        Expanded(child: _btn('8', BtnType.number)),
-                        Expanded(child: _btn('9', BtnType.number)),
-                        Expanded(child: _btn('×', BtnType.operator)),
-                      ])),
-                      Expanded(child: Row(children: [
-                        Expanded(child: _btn('4', BtnType.number)),
-                        Expanded(child: _btn('5', BtnType.number)),
-                        Expanded(child: _btn('6', BtnType.number)),
-                        Expanded(child: _btn('−', BtnType.operator)),
-                      ])),
-                      Expanded(child: Row(children: [
-                        Expanded(child: _btn('1', BtnType.number)),
-                        Expanded(child: _btn('2', BtnType.number)),
-                        Expanded(child: _btn('3', BtnType.number)),
-                        Expanded(child: _btn('+', BtnType.operator)),
-                      ])),
-                      Expanded(child: Row(children: [
-                        Expanded(child: _btn('+/-', BtnType.special)),
-                        Expanded(child: _btn('0',   BtnType.number)),
-                        Expanded(child: _btn('.',   BtnType.number)),
-                        Expanded(child: _btn('=',   BtnType.equals)),
-                      ])),
+                // ══ RIGHT: History panel ══
+                GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
+                      setState(() => _histOpen = false);
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    width: _histOpen ? 220 : 0,
+                    decoration: const BoxDecoration(
+                      color: kHistBg,
+                      border: Border(left: BorderSide(color: kBorder)),
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                        child: Row(children: [
+                          const Text('History', style: TextStyle(
+                            color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () => setState(() => _histOpen = false),
+                            child: const Icon(Icons.close, color: kTextSub, size: 18),
+                          ),
+                          if (_history.isNotEmpty) ...[
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: () => setState(() => _history.clear()),
+                              child: const Icon(Icons.delete_outline, color: kTextSub, size: 18),
+                            ),
+                          ],
+                        ]),
+                      ),
+                      const Divider(color: kBorder, height: 1),
+                      Expanded(
+                        child: _history.isEmpty
+                          ? const Center(child: Text('No history yet',
+                              style: TextStyle(color: kTextSub, fontSize: 13)))
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: _history.length,
+                              itemBuilder: (_, i) {
+                                final h = _history[i];
+                                return GestureDetector(
+                                  onTap: () => setState(() {
+                                    _current = h.result;
+                                    _newInput = true;
+                                    _justCalc = true;
+                                  }),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      border: Border(bottom: BorderSide(color: kBorder.withOpacity(0.5))),
+                                    ),
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                      Text(h.expression, style: const TextStyle(color: kTextSub, fontSize: 12)),
+                                      const SizedBox(height: 2),
+                                      Text(h.result, style: const TextStyle(
+                                        color: kText, fontSize: 18, fontWeight: FontWeight.w300)),
+                                    ]),
+                                  ),
+                                );
+                              },
+                            ),
+                      ),
                     ]),
                   ),
                 ),
               ]),
-            ),
-
-            // ══ RIGHT: History panel ══
-            GestureDetector(
-              onHorizontalDragEnd: (details) {
-                if (details.primaryVelocity != null && details.primaryVelocity! > 200) {
-                  setState(() => _histOpen = false);
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOut,
-                width: _histOpen ? 220 : 0,
-                decoration: const BoxDecoration(
-                  color: kHistBg,
-                  border: Border(left: BorderSide(color: kBorder)),
-                ),
-                clipBehavior: Clip.hardEdge,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-                    child: Row(children: [
-                      const Text('History', style: TextStyle(
-                        color: kText, fontSize: 16, fontWeight: FontWeight.w600)),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => setState(() => _histOpen = false),
-                        child: const Icon(Icons.close, color: kTextSub, size: 18),
-                      ),
-                      if (_history.isNotEmpty) ...[
-                        const SizedBox(width: 12),
-                        GestureDetector(
-                          onTap: () => setState(() => _history.clear()),
-                          child: const Icon(Icons.delete_outline, color: kTextSub, size: 18),
-                        ),
-                      ],
-                    ]),
-                  ),
-                  const Divider(color: kBorder, height: 1),
-                  Expanded(
-                    child: _history.isEmpty
-                      ? const Center(child: Text('No history yet',
-                          style: TextStyle(color: kTextSub, fontSize: 13)))
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: _history.length,
-                          itemBuilder: (_, i) {
-                            final h = _history[i];
-                            return GestureDetector(
-                              onTap: () => setState(() {
-                                _current = h.result;
-                                _newInput = true;
-                                _justCalc = true;
-                              }),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                decoration: BoxDecoration(
-                                  border: Border(bottom: BorderSide(color: kBorder.withOpacity(0.5))),
-                                ),
-                                child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                                  Text(h.expression, style: const TextStyle(color: kTextSub, fontSize: 12)),
-                                  const SizedBox(height: 2),
-                                  Text(h.result, style: const TextStyle(
-                                    color: kText, fontSize: 18, fontWeight: FontWeight.w300)),
-                                ]),
-                              ),
-                            );
-                          },
-                        ),
-                  ),
-                ]),
-              ),
-            ),
-          ]),
+            ],
+          ),
         ),
       ),
     );
