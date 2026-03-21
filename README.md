@@ -2,8 +2,6 @@
 
 A scientific calculator built with Flutter, designed to run on **Windows**, **Linux**, and **Android** from a single codebase.
 
-Inspired by the Windows Calculator. Color scheme from [carpinisan-tech.org](https://carpinisan-tech.org).
-
 ---
 
 ## Features
@@ -20,7 +18,8 @@ Inspired by the Windows Calculator. Color scheme from [carpinisan-tech.org](http
 
 ## Screenshots
 
-> Coming soon
+<img width="1251" height="701" alt="image" src="https://github.com/user-attachments/assets/13aa60e7-4c25-4c4c-80cc-6dd23159105f" />
+
 
 ---
 
