@@ -1,17 +1,42 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
-void main() => runApp(const CalculatorApp());
+const defaultAccent = Color(0xFFc8f060);
+final ValueNotifier<Color> kAccentNotifier = ValueNotifier<Color>(defaultAccent);
+Color get kAccent => kAccentNotifier.value;
+
+Future<void> loadAccent() async {
+  final prefs = await SharedPreferences.getInstance();
+  final value = prefs.getInt('accent_color');
+  if (value != null) kAccentNotifier.value = Color(value);
+}
+
+Future<void> setAccent(Color color) async {
+  kAccentNotifier.value = color;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt('accent_color', color.value);
+}
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadAccent();
+  runApp(const CalculatorApp());
+}
 
 class CalculatorApp extends StatelessWidget {
   const CalculatorApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'Calculator',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF202020)),
-    home: const CalculatorScreen(),
+  Widget build(BuildContext context) => ValueListenableBuilder<Color>(
+    valueListenable: kAccentNotifier,
+    builder: (context, accent, _) => MaterialApp(
+      title: 'Calculator',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark().copyWith(scaffoldBackgroundColor: const Color(0xFF202020)),
+      home: const CalculatorScreen(),
+    ),
   );
 }
 
@@ -20,7 +45,6 @@ const kBtnNum  = Color(0xFF333333);
 const kBtnOp   = Color(0xFF3D3D3D);
 const kBtnSpec = Color(0xFF2D2D2D);
 const kBtnSci  = Color(0xFF2A2A2A);
-const kAccent  = Color(0xFFc8f060);
 const kBorder  = Color(0xFF2A2A2A);
 const kText    = Color(0xFFFFFFFF);
 const kTextSub = Color(0xFF888888);
@@ -277,6 +301,38 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
     return inv[lbl] ?? lbl;
   }
 
+  void _openAccentPicker() {
+    Color pending = kAccent;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: kHistBg,
+        title: const Text('Accent color', style: TextStyle(color: kText)),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: pending,
+            onColorChanged: (color) => pending = color,
+            enableAlpha: false,
+            labelTypes: const [],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setAccent(pending);
+              Navigator.of(context).pop();
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _btn(String label, BtnType type) => _Btn(
     label: _resolveLabel(label),
     type: type,
@@ -337,6 +393,13 @@ class _CalcState extends State<CalculatorScreen> with SingleTickerProviderStateM
                           ]),
                         ),
                         const Spacer(),
+                        GestureDetector(
+                          onTap: _openAccentPicker,
+                          child: const Padding(
+                            padding: EdgeInsets.only(right: 16),
+                            child: Icon(Icons.palette_outlined, color: kTextSub, size: 20),
+                          ),
+                        ),
                         GestureDetector(
                           onTap: () => setState(() => _histOpen = !_histOpen),
                           child: Icon(Icons.history, color: _histOpen ? kAccent : kTextSub, size: 20),
